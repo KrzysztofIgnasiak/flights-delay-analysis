@@ -1,0 +1,117 @@
+#Analysis of flights delay
+## created by Krzysztof Ignasiak
+### date :01.04.2019
+```{r echo=FALSE}
+library(RODBC)
+library(formattable)
+dbconnection =odbcConnect("flights")
+```
+
+**1.Average arrival delay in minutes**
+```{r echo=TRUE}
+x <- sqlQuery(dbconnection,"SELECT AVG(arr_delay_new) FROM Flight_delays")
+format(round(x, 2), nsmall = 2)
+```
+**2.Maximal arrival delay in hours**
+```{r}
+sqlQuery(dbconnection,"SELECT ROUND(MAX(arr_delay_new)/60,2) FROM Flight_delays")
+```
+
+**3.Information about flights with maximum delay**
+```{r}
+sqlQuery(dbconnection,"SELECT unique_carrier,origin_city_name,dest_city_name,arr_delay_new 
+FROM Flight_delays
+Where arr_delay_new = (SELECT MAX(arr_delay_new) FROM Flight_delays)")
+```
+**4.Average arrival delay for each day of the week**  
+in minutes ordered by minimum delay
+```{r}
+sqlQuery(dbconnection,"SELECT W.weekday_name,ROUND(AVG(F.arr_delay_new),2) AS 'average arrive delay'
+        FROM Flight_delays AS F
+         INNER JOIN Weekdays AS W
+         ON F.day_of_week =W.weekday_id
+         GROUP by W.weekday_name
+        Order by AVG(F.arr_delay_new) ;")
+```
+**5 .Average arrival daley of carries, which offers flights to San Francisco**
+```{r}
+sqlQuery(dbconnection,"SELECT unique_carrier,ROUND(AVG(arr_delay_new),2) AS 'average delay'
+         FROM Flight_delays
+         WHERE unique_carrier IN 
+         (SELECT DISTINCT TOP 30 unique_carrier
+           FROM Flight_delays
+          WHERE origin_city_name ='San Francisco, CA')
+         GROUP BY unique_carrier
+         ORDER BY ROUND(AVG(arr_delay_new),2);")
+```
+**6. Percentage of carriers with regular delays**
+```{r}
+number_of_regular_delay_carriers <-sqlQuery(dbconnection,"SELECT COUNT(DISTINCT unique_carrier)
+FROM Flight_delays
+                                            WHERE unique_carrier IN(
+                                            SELECT unique_carrier
+                                            FROM Flight_delays
+                                            GROUP by unique_carrier
+                                            HAVING AVG(arr_delay_new)>10)")
+number_of_unique_carriers <-sqlQuery(dbconnection,"SELECT COUNT(DISTINCT unique_carrier)
+                  FROM Flight_delays;")
+regular_percentage_delays <-(number_of_regular_delay_carriers/number_of_unique_carriers)
+percent(regular_percentage_delays)
+
+```
+**7 Correlation between arrival delay and departure delay**
+```{r}
+dep_delay <- sqlQuery(dbconnection,"SELECT dep_delay_new FROM Flight_delays")
+arr_delay <-  sqlQuery(dbconnection,"SELECT arr_delay_new FROM Flight_delays")
+pearson <- cor(dep_delay,arr_delay, use= "complete.obs" , method= "pearson")
+print(pearson)
+```
+**8 Change in average arrival delay for each carrier between 1-23 and 24-31 of July**
+```{r}
+unique_carrier <-sqlQuery(dbconnection,"SELECT DISTINCT unique_carrier
+               FROM Flight_delays")
+               
+delay_before_23 <-sqlQuery(dbconnection,"SELECT AVG(arr_delay_new)
+FROM Flight_delays
+               WHERE month = 7
+               AND day_of_month <=23
+               GROUP By unique_carrier")
+
+delay_after_23 <-sqlQuery(dbconnection,"SELECT AVG(arr_delay_new)
+FROM Flight_delays
+               WHERE month = 7
+               AND day_of_month >=24
+               GROUP By unique_carrier")
+
+
+abs_change<- data.frame()
+for (i in 1:nrow(unique_carrier))
+{ 
+  abs_change[i,1] <- format(round(abs(delay_after_23[i,1]-delay_before_23[i,1]), 2), nsmall = 2) 
+}
+col_name <-'absChange'
+
+names(abs_change) <-col_name
+unique_carrier_abs_change <-data.frame(unique_carrier,abs_change)
+print(unique_carrier_abs_change)
+```
+**9. List of carriers, which flies From SFO to PDX as well as From SFO to EUG **
+```{r}
+sqlQuery(dbconnection,"SELECT DISTINCT unique_carrier
+FROM Flight_delays
+WHERE origin ='SFO' AND (dest ='PDX'OR dest ='EUG');
+")
+```
+**10.Information about the flights from Chicago to Stanford after 2PM (place of departure,place of arrive,average delay)**
+```{r}
+sqlQuery(dbconnection, "SELECT DISTINCT TOP 10 origin,dest, ROUND(AVG(arr_delay_new),2) AS 'Average delay'
+FROM Flight_delays
+         WHERE 
+         ((origin ='MDW' OR Origin ='ORD')
+         AND
+         (dest ='SFO' OR dest ='SJC' or dest ='OAK'))
+         AND
+         (crs_dep_time>1400)
+         GROUP by origin,dest
+         ORDER BY ROUND(AVG(arr_delay_new),2) desc;")
+```
